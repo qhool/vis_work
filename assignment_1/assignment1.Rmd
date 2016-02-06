@@ -1,0 +1,32 @@
+---
+title: "VR3 Assignment 1"
+author: Josh Burroughs
+output: html_document
+---
+
+
+Strength                       | Weakness
+------------------------------ | ----------------
+1. Facility with programming   | 3. Time
+2. Some design aptitude        | 2. Eczema
+3. Full-color vision           | 1. Rusty Math
+
+
+Obviously, I'm good at the code part, and I'm into the visual stuff, at which I don't completely suck.  I think I'll probably need to get brushed up on spatial transformation math to do some of the things I really want, and time is always an issue for me.
+ 
+ I really enjoy a lot of the visualizations from [xkcd](xkcd.com):
+ 
+ * [Gravity Wells](https://xkcd.com/681/)
+ * [Congress](https://xkcd.com/1127/)
+ * [Movie Narratives](https://xkcd.com/657/)
+ * [Tic-Tac-Toe](https://xkcd.com/832/)
+
+ More of a diagram, but one of my favorites:
+ 
+ * [Up Goer Five](https://xkcd.com/1133/)
+ 
+ I'm quite interested in learning to use [D3](https://github.com/mbostock/d3/wiki); there's also [plotly](https://plot.ly/), which has an [R API](https://plot.ly/r/), since we're apparently not, as a people, up to the task of learning javascript :-P.
+ 
+ Graph visualization is another fun area; in R, [igraph](http://igraph.org/r/) looks promising -- [this blog post](http://kateto.net/network-visualization) has a lot of nifty examples, mostly with igraph.
+ 
+ Finally, there are some packages which produce xkcd-style graphs, [in R](https://cran.r-project.org/web/packages/xkcd/index.html) (based on ggplot2), [javascript](https://github.com/imkevinxu/xkcdgraphs) (on top of D3) and [python matplotlib](http://jakevdp.github.io/blog/2013/07/10/XKCD-plots-in-matplotlib/).  These are a tad silly, but a [blog post](https://www.chrisstucchio.com/blog/2014/why_xkcd_style_graphs_are_important.html) I read recently points out that it's great way to visually convey the 'schematic' nature of a graph.
