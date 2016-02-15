@@ -1,0 +1,113 @@
+\documentclass{article}
+
+\begin{document}
+
+<<setup,echo=FALSE,message=FALSE>>=
+source('portfolio_funcs.R')
+sp500 <- read_ticker('S&P 500','%5EGSPC')
+
+portfolio <- data.table()
+combined <- copy(sp500) #just a template
+combined[,`:=`(Symbol = 'Combined', Close = 0, Prev.Close = 0, Adj.Close = 0)]
+tickers <- c('AAPL','BAC','GE','WMT','XOM')
+initial_buy <- data.table(x=NA)
+for( ticker in tickers) {
+  stock <- read_ticker(ticker)
+  #find the contribution of this stock to the overall portfolio:
+  initial_buy[[ticker]] <- stock[1,Close]
+  ratio <- stock[1,Close/Adj.Close/5]
+  combined[,Adj.Close :=  Adj.Close + stock$Adj.Close * ratio]
+  #add stock stats to the portfolio:
+  portfolio <- rbind(portfolio,calc_stats(sp500,stock))
+}
+add_changes(combined)
+portfolio <- rbind(portfolio,calc_stats(sp500,copy(combined)))
+portfolio[,Symbol := factor(Symbol)]
+initial_buy[,x:=NULL]
+initial_buy <- round((initial_buy/sum(initial_buy))*100)
+performers <- as.character(portfolio[Symbol %in% tickers & Year == 'Overall'][order(-1 * Gain),Symbol])
+@
+
+
+\section*{Portfolio Status}
+
+Your portfolio was purchased on January 29th, 2010, and included \emph{equal shares} of \Sexpr{length(tickers)} stocks:
+<<stocks,echo=F>>=
+out <- c()
+for( ticker in tickers ) {
+  out <- c(out,paste0(ticker,' (',initial_buy[[ticker]],'\\%)'))
+}
+asis_output(paste0(out, sep = ', '))
+@
+ (percentages are the fraction of the initial 'buy' for each stock).  Table 1 shows the performance of each of your stocks and risks, both absolute, and relative to the S\&P 500 index.  All values (other than the initial proportions) are calculated using the split and dividend adjusted close prices supplied by Yahoo Finance, denoted by $ P $. Values shown in the table are calculated as follows: 
+ 
+
+\begin{equation}
+ \textrm{Gain} = \frac{P_{\textrm{ending}}}{P_{\textrm{starting}}} - 1
+\end{equation}
+ 
+\begin{equation}
+ \textrm{Relative.Gain} = \textrm{Gain}_{\textrm{stock}} - \textrm{Gain}_{\textrm{S\&P 500}}
+\end{equation}
+ 
+\begin{equation}
+ \delta = \frac{P}{P_{\textrm{previous}}} - 1
+\end{equation}
+
+
+\begin{equation}
+ \textrm{Volatility} = \textrm{stddev}(\ln{(\delta + 1)}) * \sqrt{252}
+\end{equation}
+
+\begin{equation}
+ \textrm{Beta} =
+    \frac{
+      \textrm{cov}({\delta}_{\textrm{stock}},{\delta}_{\textrm{S\&P 500}})
+    }{
+      {\textrm{var}({\delta}_{\textrm{S\&P 500}})}
+    }
+\end{equation}
+
+\begin{table}
+\caption{Portfolio (Top Performers)}
+<<tblhead,echo=FALSE,>>=
+out = c()
+d <- portfolio[Quarter == 'All']
+timeprd <- d[Symbol == 'Combined',.(Year)]
+n_cols = nrow(timeprd)
+out <- c(out,paste0("\\begin{tabular}{ll",
+                    paste0(rep('r',n_cols),collapse=''),
+                    "}"))
+
+out <- c(out,paste(paste(c("\\rule{0pt}{1.5em}",' ',timeprd[,as.character(Year)]),
+                          collapse=' & '),"\\\\"))
+out <- c(out,"\\hline")
+first <- TRUE
+for( ticker in c(performers,'Combined') ) {
+  #print(ticker)
+  out <- c(out,ifelse(ticker == 'Combined',"\\hline",''))
+  pfx <- "\\rule{0pt}{1.5em}"
+  firstval <- TRUE
+  for( fld in c('Gain','Relative.Gain','Volatility','Beta')) {
+    #print(fld)
+    vals <- d[Symbol == ticker][[fld]]
+    if( fld %in% c('Gain','Relative.Gain') ) {
+      vals <- paste0(round(vals*100),'\\%')
+    } else {
+      vals <- paste0(round(vals,2))
+    }
+    out <- c(out,paste0(paste(c(ifelse(firstval,paste0(pfx,ticker),''),fld,vals),
+                              collapse=' & '),"\\\\"))
+    firstval <- FALSE
+  }
+  first <- FALSE
+  #out <- c(out,)
+}
+out <- c(out,"\\end{tabular}","")
+
+asis_output(paste(out,collapse="\n"))
+@
+
+\end{table}
+
+\end{document}
