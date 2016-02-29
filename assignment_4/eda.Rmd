@@ -1,0 +1,175 @@
+---
+title: "Assignment 4 Analysis"
+author: "Josh Burroughs"
+date: "February 28, 2016"
+output: html_document
+---
+
+```{r}
+library(data.table)
+library(bit64)
+```
+
+# San Francisco
+Downloaded from https://data.sfgov.org/view/vsk2-um2x 
+```{r}
+sf <- fread("data/sf/SFPD_Incidents_-_from_1_January_2003.csv")
+setnames(sf,make.names(names(sf)))
+sf.factor.cols <- c('Category','Descript','DayOfWeek','Resolution')
+sf[,sf.factor.cols := lapply(.SD,factor),.SDcols = sf.factor.cols, with=F]
+sf[,Date := as.POSIXct(Date,format='%m/%d/%Y',tz='PST')]
+t_to_secs <- function(time) {
+  lt <- as.POSIXlt(time,format='%M:%S')
+  lt$min * 60 + lt$sec
+}
+sf[,DateTime := Date + t_to_secs(Time)]
+```
+
+```{r}
+library(ggplot2)
+with(sf,smoothScatter(x=X,y=Y))
+```
+Data outside the main geographical area:
+```{r}
+boxplot(sf$X)
+title("X")
+boxplot(sf$Y)
+title("Y")
+max.loc = sf[,sapply(.SD,max),.SDcols=c('X','Y')]
+```
+Looks like points at `r max.loc` are bogus
+```{r}
+sf[X == max.loc[['X']] & Y == max.loc[['Y']],`:=`(X=NA,Y=NA)]
+with(sf,smoothScatter(x=X,y=Y))
+```
+
+Looking for murders:
+```{R}
+sf[grep('HOMICIDE|MURDER|SLAUGHTER',Descript),unique(Descript)]
+sf[grep('ASSAULT',Descript),unique(Descript)]
+```
+Only attempted homicide...
+```{r}
+sf[grep('GRAND THEFT',Descript),unique(Descript)]
+```
+
+# Raleigh
+
+Downloaded from https://data.raleighnc.gov/Police/Police-Incident-Data-from-Jan-1-2005-Master-File/csw9-dd5k
+```{r}
+ral <- fread("data/raleigh/Police_Incident_Data_from_Jan_1_2005_-_Master_File.csv")
+setnames(ral,make.names(names(ral)))
+ral.factor.cols <- c('LCR','DISTRICT')
+ral[,ral.factor.cols := lapply(.SD,factor),.SDcols = ral.factor.cols, with=F]
+#split the Location column apart:
+ral[,c('Y','X') := lapply(tstrsplit(gsub('[()]','',LOCATION),','),as.numeric)]
+ral[,INC.DATETIME := as.POSIXct(INC.DATETIME,format="%m/%d/%Y %I:%M:%S %p",tz='EST')]
+```
+
+```{r}
+with(ral,smoothScatter(X,Y))
+```
+
+Incident Code:
+```{r}
+ralgrep <- function(term) unique(ral[grep(term,LCR.DESC,ignore.case = T),.(LCR,LCR.DESC)])
+ralgrep('murder')
+ralgrep('attempt')
+ralgrep('theft')
+ralgrep('larc')
+ralgrep('assault')
+```
+
+From here on, we'll analyze GTA and combined assault incidents.  Assign category names to the crimes we're interested in:
+```{r} 
+ral[grep('assault',LCR.DESC,ignore.case = T), Cat := 'ASSAULT']
+ral[LCR %in% c('40A','71','72','73'), Cat := 'GTA']
+sf[grep('AUTO, GRAND THEFT|GRAND THEFT AUTO',Descript), Cat := 'GTA']
+sf[grep('ASSAULT',Descript), Cat := 'ASSAULT']
+```
+Join the two data sets:
+```{r}
+crimes <- rbind(
+  ral[,.(City='Raleigh',DateTime = INC.DATETIME,X,Y,Category=Cat)],
+  sf[,.(City='San Francisco',DateTime,X,Y,Category=Cat)])[!is.na(Category),]
+factor.cols <- c('City','Category')
+crimes[,factor.cols := lapply(.SD,as.factor),.SDcols = factor.cols,with=F]
+```
+Only use dates where both cities have data:
+```{r}
+max.t <- min(crimes[,.(d = max(DateTime)),by=City][,d])
+min.t <- max(crimes[,.(d = min(DateTime)),by=City][,d])
+crimes <- crimes[DateTime > min.t & DateTime < max.t]
+```
+
+We need to normalize by population to compare the 2 cities.
+Census population estimate for 2000-2009, downloaded from 
+https://www.census.gov/popest/data/cities/totals/2009/ on 2/28/2016:
+```{r}
+pop.2009 <- fread("grep -E '^[0-9]' data/SUB-EST2009-01.csv",skip=3)
+setnames(pop.2009,c('Rank','City','State',2009:2000,'Base','Census'))
+pop.2014 <- fread("data/PEP_2014_PEPANNRSIP.US12A_with_ann.csv")
+setnames(pop.2014,c(make.names(names(pop.2014)[1:8]),'Census','Base',2010:2014))
+p.2009 <- melt(pop.2009,1:3,4:13,variable.name='Year',value.name="Population")[grep('San Francisco|Raleigh',City),.(City = gsub(' city','',City),Year,Population)]
+
+p.2014 <- melt(pop.2014[grep('San Francisco|Raleigh',GC_RANK.display.label)],c('GC_RANK.display.label'),11:15,variable.name='Year',value.name='Population')[,.(City = gsub('United States - | city,.*','',GC_RANK.display.label),Year,Population)][grep('South',City,invert = T)]
+
+predpop <- function(p,year) {
+  m <- lm(Population ~ Year,p)
+  predict(m,2015)
+}
+population <- rbind(p.2009,p.2014)
+population[,Year := as.numeric(as.character(Year))]
+population[,Population := as.numeric(gsub(',','',Population))]
+
+#use lm to project 2015 populations
+p.2015 <- population[,.(Year=2015,Population=predict(lm(Population~Year),newdata=data.frame(Year=2015))),by=City]
+population <- rbind(population,p.2015)
+#population <- population[order(City,Year)]
+```
+
+Now to join the crime data with population data
+```{r}
+crimes[,Year := as.numeric(format(DateTime,'%Y'))]
+crimes <- crimes[Year < 2016]
+crimes <- merge(crimes,population,by=c('City','Year'))
+```
+
+```{r}
+annual.crime <- crimes[,.(Per.100K = .N/(Population/100000)),by=.(City,Category,Year)]
+
+ggplot(annual.crime,aes(x=Year,y=Per.100K,fill=City))+geom_bar(stat='identity',position='dodge') + labs(y='Incidents Per 100K Pop') + facet_wrap(~ Category,scales='free_y',ncol=1)
+
+ggplot(annual.crime,aes(x=Year,y=Per.100K,fill=Category))+geom_bar(stat='identity',position='dodge') + labs(y='Incidents Per 100K Pop') + facet_wrap(~ City,ncol=1)
+```
+
+```{r}
+library(ggmap)
+city.centers <- crimes[!is.na(X) & !is.na(Y),lapply(.SD,function(V) (max(V) - min(V))/2 + min(V)),by=City,.SDcols=c('Y','X')][,.(City,lon=X,lat=Y)]
+center.sf <- city.centers[City=='San Francisco']
+center.ral <- city.centers[City=='Raleigh']
+map.sf <- get_map(location = c(center.sf$lon,center.sf$lat),zoom=12)
+map.ral <- get_map(location = c(center.ral$lon,center.ral$lat),zoom=12)
+blankout <- theme(axis.line=element_blank(),
+      axis.text.x=element_blank(),
+      axis.text.y=element_blank(),
+      axis.ticks=element_blank(),
+      axis.title.x=element_blank(),
+      axis.title.y=element_blank(),
+      legend.position="none",
+      panel.background=element_blank(),
+      panel.border=element_blank(),
+      panel.grid.major=element_blank(),
+      panel.grid.minor=element_blank(),
+      plot.background=element_blank())
+map_progression <- function(m,city,cat) {
+  print(ggmap(m) + geom_density_2d(aes(x = X, y = Y,color=Category),data=crimes[City==city & Category == cat]) + facet_wrap(~ Year,nrow=2) + blankout + labs(title=paste(cat,"in",city)))
+}
+map_progression(map.sf,'San Francisco','GTA')
+map_progression(map.ral,'Raleigh','GTA')
+map_progression(map.sf,'San Francisco','ASSAULT')
+map_progression(map.ral,'Raleigh','ASSAULT')
+```
+
+
+
